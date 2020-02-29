@@ -3,7 +3,7 @@ import { Subject } from 'rxjs';
 import { Router } from '@angular/router';
 import { Injectable } from '@angular/core';
 
-@Injectable({providedIn:'root'})
+@Injectable({ providedIn: 'root' })
 export class TrainingService {
   exerciseChanged = new Subject<Exercise>();
   private availableExercise: Exercise[] = [
@@ -28,6 +28,8 @@ export class TrainingService {
       date: new Date(),
       state: 'completed'
     });
+    this.runningExercise = null;
+    this.exerciseChanged.next(null);
   }
   cancelExercise(progress: number) {
     this.exercises.push({
@@ -37,8 +39,13 @@ export class TrainingService {
       duration: this.runningExercise.duration * (progress / 100),
       calories: this.runningExercise.calories * (progress / 100)
     });
+    this.runningExercise = null;
+    this.exerciseChanged.next(null);
   }
   getRunningExercise() {
     return { ...this.runningExercise };
+  }
+  getCompletedOrCancelledExercises() {
+    return this.exercises.slice();
   }
 }
