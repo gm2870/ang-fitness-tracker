@@ -4,18 +4,23 @@ import { Injectable } from '@angular/core';
 import { AngularFirestore } from '@angular/fire/firestore';
 import 'firebase/firestore';
 import { Subscription } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, take } from 'rxjs/operators';
 import { UiService } from '../shared/ui.service';
+import * as fromTraining from './training.reducer';
+import * as Training from './training.actions';
+import { Store } from '@ngrx/store';
 @Injectable({ providedIn: 'root' })
 export class TrainingService {
   exerciseChanged = new Subject<Exercise>();
   exercisesChanged = new Subject<Exercise[]>();
   finishedExercisesChanged = new Subject<Exercise[]>();
-  private availableExercises: Exercise[] = [];
-  private runningExercise: Exercise;
   private fbSubs: Subscription[] = [];
 
-  constructor(private firestore: AngularFirestore, private UiService: UiService) {}
+  constructor(
+    private firestore: AngularFirestore,
+    private UiService: UiService,
+    private store: Store<fromTraining.State>
+  ) {}
   fetchAvailableExercises() {
     this.UiService.loadingStateChange.next(true);
     this.fbSubs.push(
@@ -35,10 +40,11 @@ export class TrainingService {
           })
         )
         .subscribe(
-          exercises => {
+          (exercises: Exercise[]) => {
             this.UiService.loadingStateChange.next(false);
-            this.availableExercises = exercises;
-            this.exercisesChanged.next([...this.availableExercises]);
+            // this.availableExercises = exercises;
+            // this.exercisesChanged.next([...this.availableExercises]);
+            this.store.dispatch(new Training.SetAvailableTraining(exercises));
           },
           error => {
             this.UiService.loadingStateChange.next(false);
@@ -50,32 +56,37 @@ export class TrainingService {
   }
   startExercise(selectedId: string) {
     // this.firestore.doc('availableExercises/' + selectedId).update({lastSelected: new Date()});
-    this.runningExercise = this.availableExercises.find(ex => ex.id === selectedId);
-    this.exerciseChanged.next({ ...this.runningExercise });
+    // this.runningExercise = this.availableExercises.find(ex => ex.id === selectedId);
+    this.store.dispatch(new Training.StartTraining(selectedId));
   }
   completeExercise() {
-    this.addDataToDatabase({
-      ...this.runningExercise,
-      date: new Date(),
-      state: 'completed'
-    });
-    this.runningExercise = null;
-    this.exerciseChanged.next(null);
+    this.store
+      .select(fromTraining.getActiveExercises)
+      .pipe(take(1))
+      .subscribe(ex => {
+        this.addDataToDatabase({
+          ...ex,
+          date: new Date(),
+          state: 'completed'
+        });
+        this.store.dispatch(new Training.StopTraining());
+      });
   }
   cancelExercise(progress: number) {
-    this.addDataToDatabase({
-      ...this.runningExercise,
-      date: new Date(),
-      state: 'cancelled',
-      duration: this.runningExercise.duration * (progress / 100),
-      calories: this.runningExercise.calories * (progress / 100)
-    });
-    this.runningExercise = null;
-    this.exerciseChanged.next(null);
+    this.store
+      .select(fromTraining.getActiveExercises)
+      .pipe(take(1))
+      .subscribe(ex => {
+        this.addDataToDatabase({
+          ...ex,
+          state: 'cancelled',
+          duration: ex.duration * (progress / 100),
+          calories: ex.calories * (progress / 100)
+        });
+        this.store.dispatch(new Training.StopTraining());
+      });
   }
-  getRunningExercise() {
-    return { ...this.runningExercise };
-  }
+
   fetchCompletedOrCancelledExercises() {
     this.fbSubs.push(
       this.firestore
@@ -83,7 +94,8 @@ export class TrainingService {
         .valueChanges()
         .subscribe(
           (exercises: Exercise[]) => {
-            this.finishedExercisesChanged.next(exercises);
+            //this.finishedExercisesChanged.next(exercises);
+            this.store.dispatch(new Training.SetAvailableTraining(exercises));
           },
           error => {
             console.log(error);
